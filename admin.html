@@ -164,14 +164,17 @@ button{border:0;padding:11px 16px;border-radius:8px;cursor:pointer;font-weight:b
 </div>
 
 <div id="step2" class="card formCard" >
+<div id="formCard">
 <h3 id="formTitle">2. Match Details - New Match</h3>
 <input id="team1" placeholder="Team 1 Name e.g. India">
+<input id="score1" placeholder="Score Team 1 e.g. 150/4 (10.2) - Live ke liye">
 <div class="logoBox">
   <input id="logo1File" type="file" accept="image/*">
   <input id="logo1" placeholder="Ya Logo URL paste karo">
   <img id="logo1Prev" class="preview">
 </div>
 <input id="team2" placeholder="Team 2 Name e.g. Australia">
+<input id="score2" placeholder="Score Team 2 e.g. 85/2 (8.1) Ya Yet to Bat">
 <div class="logoBox">
   <input id="logo2File" type="file" accept="image/*">
   <input id="logo2" placeholder="Ya Logo URL paste karo">
@@ -635,6 +638,7 @@ function showSaved(){
     <small style="color:#aaa">${m.league||''} | API:${m.apiId||'manual'} [${m.apiSource||'manual'}]</small>
     <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">
       <button class="btn-small" style="background:#38bdf8" onclick="editMatch(${i})">Edit</button>
+    <small style="color:gold">ON/OFF Control - Kaunsa match live karna hai yaha se:</small>
       <button class="btn-small" style="background:#22c55e" onclick="quickStatus(${i},'live')">Live</button>
       <button class="btn-small" style="background:#eab308" onclick="quickStatus(${i},'rain')">Rain</button>
       <button class="btn-small" style="background:#f97316" onclick="quickStatus(${i},'delayed')">Delay</button>
@@ -647,6 +651,7 @@ window.editMatch=(i)=>{
  let arr=JSON.parse(localStorage.getItem('cricTeamMatches')||'[]'); let m=arr[i];
  editIndex=i;
  document.getElementById('team1').value=m.team1; document.getElementById('team2').value=m.team2;
+ document.getElementById('score1').value=m.score1||''; document.getElementById('score2').value=m.score2||'';
  document.getElementById('logo1').value=m.logo1||''; document.getElementById('logo2').value=m.logo2||'';
  logo1Data=m.logo1||''; logo2Data=m.logo2||'';
  document.getElementById('title').value=m.title||''; document.getElementById('status').value=m.status||'upcoming';
@@ -666,11 +671,19 @@ window.editMatch=(i)=>{
  document.getElementById('cancelBtn').style.display='block';
  window.scrollTo(0,0); showSaved();
 }
-window.quickStatus=(i, newStatus)=>{
- let arr=JSON.parse(localStorage.getItem('cricTeamMatches')||'[]');
- arr[i].status=newStatus; localStorage.setItem('cricTeamMatches', JSON.stringify(arr)); showSaved();
- tryUpdateFirebase(arr[i], {status:newStatus});
- document.getElementById('msg').innerText=`✅ ${arr[i].team1} vs ${arr[i].team2} -> ${newStatus.toUpperCase()}`;
+window.quickStatus=async(i, newStatus)=>{
+ let localArr=JSON.parse(localStorage.getItem('cricTeamMatches')||'[]');
+ localArr[i].status=newStatus; 
+ localStorage.setItem('cricTeamMatches', JSON.stringify(localArr));
+ // Firebase me bhi update
+ try{
+   const snap = await getDoc(doc(db,"settings","main"));
+   let arr = snap.exists() && snap.data().matches? snap.data().matches : [];
+   if(arr[i]) arr[i].status = newStatus;
+   await setDoc(doc(db,"settings","main"), { matches: arr }, {merge:true});
+ }catch(e){ console.log(e); }
+ showSaved();
+ document.getElementById('msg').innerText=`✅ ${localArr[i].team1} vs ${localArr[i].team2} -> ${newStatus.toUpperCase()}`;
 }
 window.deleteMatch=(i)=>{
  if(!confirm("Delete karna hai?")) return;
@@ -692,7 +705,7 @@ document.getElementById('cancelBtn').addEventListener('click', ()=>{
  document.getElementById('formTitle').innerText='2. Match Details - New Match';
  document.getElementById('saveBtn').innerText='FINAL SAVE MATCH';
  document.getElementById('cancelBtn').style.display='none';
- ['team1','team2','logo1','logo2','title','mTime','league','apiId','apiKey'].forEach(id=>document.getElementById(id).value='');
+ ['team1','team2','score1','score2','logo1','logo2','title','mTime','league','apiId','apiKey'].forEach(id=>document.getElementById(id).value='');
 });
 showSaved();
 document.getElementById('saveBtn').addEventListener('click', async ()=>{
@@ -702,7 +715,7 @@ document.getElementById('saveBtn').addEventListener('click', async ()=>{
     {title: 'Total Sixes Over 10.5', bet: '100', win: '195', type: 'range', isAuto: true}
   ];
 let data={
-  sport:selectedSport, team1:document.getElementById('team1').value, team2:document.getElementById('team2').value,
+  sport:selectedSport, team1:document.getElementById('team1').value, team2:document.getElementById('team2').value,  score1:document.getElementById('score1').value, score2:document.getElementById('score2').value,
   logo1: logo1Data || document.getElementById('logo1').value, logo2: logo2Data || document.getElementById('logo2').value,
   title:document.getElementById('title').value, league:document.getElementById('league').value, apiId:document.getElementById('apiId').value, apiSource:document.getElementById('apiSource').value, apiKey:document.getElementById('apiKey').value,
   mTime:document.getElementById('mTime').value? new Date(document.getElementById('mTime').value).toISOString() : new Date().toISOString(),

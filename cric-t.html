@@ -104,17 +104,29 @@ function getTimeObj(m){
     return new Date(m.mTime);
   }catch(e){ return null; }
 }
+function toIST12(dateStr){
+  if(!dateStr) return 'TBD';
+  let d = new Date(dateStr);
+  return d.toLocaleString('en-IN',{timeZone:'Asia/Kolkata', hour:'2-digit', minute:'2-digit', hour12:true, day:'2-digit', month:'short'}) + ' IST';
+}
 function formatHMS(diffMs){
   if(diffMs<0) diffMs=0;
   let s=Math.floor(diffMs/1000);
   let h=Math.floor(s/3600); s%=3600;
   let m=Math.floor(s/60); s%=60;
-  return `${String(h).padStart(1,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')} - 12H FORMAT`;
 }
-function getTimeDisplay(m){ let d=getTimeObj(m); return d?d.toLocaleString():'TBD'; }
+function getTimeDisplay(m){ return toIST12(m.mTime); }
 
 function render(){
- let filtered = filter=='all'? allMatches : allMatches.filter(m=>(m.status||'upcoming')==filter);
+ let filtered = [];
+ if(filter=='all') filtered = allMatches;
+ else if(filter=='upcoming') {
+   // 12 HOUR ka filter hataya, saare upcoming dikhenge sorted - India wala bhi
+   filtered = allMatches.filter(m=>(m.status||'upcoming')=='upcoming').sort((a,b)=> new Date(a.mTime) - new Date(b.mTime));
+ } else {
+   filtered = allMatches.filter(m=>(m.status||'upcoming')==filter);
+ }
  document.getElementById('liveCount').innerText=`${filtered.length} Matches`;
  if(filtered.length==0){ document.getElementById('list').innerHTML=`<p style="padding:20px;color:#888">No ${filter} matches</p>`; return; }
  document.getElementById('list').innerHTML=filtered.map((m,idx)=>{
@@ -146,8 +158,7 @@ function render(){
  }).join('');
  if(allMatches.length>0){
    let liveM = allMatches.find(m=>m.status=='live') || allMatches[0];
-   document.getElementById('scoreText').innerHTML = `<div style="display:flex;gap:15px;align-items:center"><img src="${liveM.logo1}" style="width:40px;height:40px;border-radius:50%;background:#fff" onerror="this.style.display='none'"><b style="color:gold">${liveM.team1} VS ${liveM.team2}</b><img src="${liveM.logo2}" style="width:40px;height:40px;border-radius:50%;background:#fff" onerror="this.style.display='none'"></div><small style="color:#aaa">${liveM.title||''} - ${liveM.status}</small>`;
- }
+      document.getElementById('scoreText').innerHTML = `<div style="display:flex;gap:15px;align-items:center"><img src="${liveM.logo1}" style="width:40px;height:40px;border-radius:50%;background:#fff" onerror="this.style.display='none'"><div><b style="color:gold">${liveM.team1} VS ${liveM.team2}</b><br><span style="color:#22c55e;font-size:16px;font-weight:900">${liveM.scoreDisplay||liveM.score1||''} - ${liveM.score2||''}</span><br><small style="color:#aaa">${liveM.title||''} - ${liveM.status}</small></div><img src="${liveM.logo2}" style="width:40px;height:40px;border-radius:50%;background:#fff" onerror="this.style.display='none'"></div>`;
 }
 
 function updateAllTimers(){
@@ -212,9 +223,10 @@ window.openMatch=(idx)=>{
 
  document.getElementById('detailBets').innerHTML = allBets.map((f,fi)=>{
   let extra = f.isAuto ? `<span style="font-size:10px;color:#38bdf8;margin-left:6px">🔥 ${f.bets||150}+ bets</span>` : '';
-  if(f.type=='winner') return `<div class="bet"><span>${f.title} - ${m.team1} ${extra}</span><span class="rate" onclick="placeBet(${fi},'team1')">${f.team1Bet} → ${f.team1Win}</span></div><div class="bet"><span>${f.title} - ${m.team2} ${extra}</span><span class="rate" onclick="placeBet(${fi},'team2')">${f.team2Bet} → ${f.team2Win}</span></div>`;
-  return `<div class="bet"><div><b>${f.title}</b> ${extra}<div class="rule">${f.rule||''}</div></div><span class="rate" onclick="placeBet(${fi},'single')">Bet ${f.bet||''} → Win ${f.win||''}</span></div>`;
- }).join('') || '<p style="padding:20px;color:#888">No bets for this match</p>';
+  // FIX 6: Bet click add kiya
+  if(f.type=='winner') return `<div class="bet" onclick="placeBet(${fi},'team1')" style="cursor:pointer"><span>${f.title} - ${m.team1} ${extra}</span><span class="rate">${f.team1Bet} → ${f.team1Win} [CLICK TO BET]</span></div><div class="bet" onclick="placeBet(${fi},'team2')" style="cursor:pointer"><span>${f.title} - ${m.team2} ${extra}</span><span class="rate">${f.team2Bet} → ${f.team2Win} [CLICK TO BET]</span></div>`;
+  return `<div class="bet" onclick="placeBet(${fi},'single')" style="cursor:pointer"><div><b>${f.title}</b> ${extra}<div class="rule">${f.rule||''}</div></div><span class="rate">Bet ${f.bet||''} → Win ${f.win||''} [BET]</span></div>`;
+ }).join('') || '<p style="padding:20px;color:#888">No bets - Admin se Fancy Add karo</p>';
  renderBetHistory();
  if(m.status=='live' &&!crowdOn) toggleCrowd();
  checkAutoSettlement();
@@ -368,6 +380,14 @@ async function fetchApiMatches(){
     if(json.status === "success" && json.data){
       apiMatches = json.data.slice(0,10).map((m, idx) => {
         // SCORE NIKALNA - FREE API ME BHI AATA HAI
+        let scoreText = "";
+        if(m.score && m.score.length>0){
+          m.score.forEach(s=>{
+            scoreText += `${s.inning}: ${s.r}/${s.w} (${s.o} ov) | `;
+          });
+        } else {
+          scoreText = m.scoreDisplay || "Score TBD";
+        }
         let score1 = 0, score2 = 0, winnerAuto = '';
         if(m.score && m.score.length >= 2){
           // score[0].r = Team1 runs, score[1].r = Team2 runs
@@ -388,7 +408,7 @@ async function fetchApiMatches(){
           sport: "CRICKET",
           status: m.matchEnded ? "ended" : (m.matchStarted ? "live" : "upcoming"),
           winner: winnerAuto || m.winner || '', // AUTO WINNER
-          scoreDisplay: m.score ? `${score1}/${score2}` : '',
+          scoreDisplay: scoreText,
           scoreRaw: m.score || [],
           mTime: m.dateTimeGMT || m.date,
           createdAt: "api-"+(m.id || idx),
