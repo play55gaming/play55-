@@ -546,15 +546,19 @@ window.showMainPage=async(user)=>{
   await loadSettingsFirebase();
   await loadMatchesFirebase();
   refreshMenuData(); renderMatches();
-  onSnapshot(doc(db,"clients",user.username),(snap)=>{
+onSnapshot(doc(db,"clients",user.username),(snap)=>{
     if(!snap.exists()) return;
-const serverCoins = snap.data().coins||0;
-if(serverCoins===0 && (currentUser?.coins||0)>10 && !window._allowZeroReset){ console.warn("Blocked 0 reset"); return; }
-      currentUser={id:snap.id,...snap.data()};
-      document.getElementById("balanceValue").innerText=Math.floor(currentUser.coins||0);
-      localStorage.setItem("play55_balance",Math.floor(currentUser.coins||0));
-      refreshMenuData();
-  });
+    const serverCoins = snap.data().coins||0;
+    // FIX: Agar abhi-abhi deduct hua hai to 0 allow karo, warna accidental 0 ko block karo
+    if(serverCoins===0 && (currentUser?.coins||0)>10 && !window._allowZeroReset){
+      const lastDeduct = window._lastDeductTime || 0;
+      if(Date.now() - lastDeduct > 5000){ console.warn("Blocked accidental 0 reset"); return; }
+    }
+    currentUser={id:snap.id,...snap.data()};
+    document.getElementById("balanceValue").innerText=Math.floor(currentUser.coins||0);
+    localStorage.setItem("play55_balance",Math.floor(currentUser.coins||0));
+    refreshMenuData();
+});
   onSnapshot(SETTINGS_REF,(snap)=>{
     if(snap.exists()){
       const d=snap.data();

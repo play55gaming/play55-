@@ -102,7 +102,42 @@ export async function addCoinsToClient(username, amount, reason, refNo){
     })
   });
 }
+// === FIX 1 - BAL 0 BUG KE LIYE - NAYA CODE ===
+export async function fbDeduct(username, amount){
+  const userId = username.toLowerCase();
+  amount = Math.floor(Number(amount));
+  if(amount<=0) return false;
+  const ref = doc(db,"clients",userId);
+  await updateDoc(ref, { coins: increment(-amount) });
+  // Ye 2 line bahut important hai - 0 ko block hone se rokegi
+  window._lastDeductTime = Date.now();
+  window._allowZeroReset = true;
+  setTimeout(()=> window._allowZeroReset = false, 5000);
+  return true;
+}
 
+export async function fbAdd(username, amount, desc){
+  const userId = username.toLowerCase();
+  amount = Math.floor(Number(amount));
+  if(amount<=0) return false;
+  const ref = doc(db,"clients",userId);
+  const now = new Date();
+  await updateDoc(ref, { 
+    coins: increment(amount),
+    history: arrayUnion({ 
+      date: now.toLocaleString("en-IN"), 
+      iso: now.toISOString(), 
+      amount, 
+      type: 'CREDIT', 
+      ref: 'WIN'+Date.now().toString().slice(-5), 
+      balance: 0, 
+      desc: desc||'Win', 
+      time: now.toLocaleString() 
+    }) 
+  });
+  return true;
+}
+// === FIX END ===
 export async function loginClient(username, password){
   const q = query(collection(db, "clients"), where("username","==",username.toLowerCase()), where("password","==",password));
   const snap = await getDocs(q);
@@ -123,4 +158,16 @@ export async function getClientBalanceSafe(username){
   const snap = await getDoc(doc(db, "clients", username.toLowerCase()));
   if(!snap.exists()) return 0;
   return Math.floor(snap.data().coins || 0);
+}
+// === WINDOW KE LIYE - GAME ISKO CALL KARTA HAI ===
+if(typeof window !== 'undefined'){
+  window.fbDeduct = async (amount)=>{
+    const u = (localStorage.getItem("play55_current_user")||"demo").toLowerCase();
+    return await fbDeduct(u, amount);
+  };
+  window.fbAdd = async (amount, desc)=>{
+    const u = (localStorage.getItem("play55_current_user")||"demo").toLowerCase();
+    return await fbAdd(u, amount, desc);
+  };
+  window.getClientBalance = getClientBalance;
 }

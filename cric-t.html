@@ -327,9 +327,7 @@ function incReqCount(){
   console.log(`API Used: ${data.count}/100`);
 }
 let apiMatches = [];
-
 function mergeAllAndRender(){
-  // Duplicate hatane ke liye createdAt se filter
   let combined = [...apiMatches, ...firestoreMatches, ...localMatches];
   let seen = new Set();
   allMatches = combined.filter(m=>{
@@ -340,7 +338,6 @@ function mergeAllAndRender(){
   });
   render();
 }
-
 // Firestore Listener - Admin Matches
 try{
   onSnapshot(doc(db,"settings","main"), snap=>{
@@ -351,8 +348,7 @@ try{
   console.log("Firebase fail", e);
   mergeAllAndRender();
 }
-
-setInterval(()=>{
+ setInterval(()=>{
   if(currentMatchIndex>=0){
     let m=allMatches[currentMatchIndex]; let d=getTimeObj(m); if(!d) return;
     let now=Date.now();
@@ -441,19 +437,39 @@ async function fetchApiMatches(){
 }
 fetchApiMatches();
 function scheduleNextFetch(){
-  let isLive = allMatches.some(m => m.status === 'live');
-let nextTime = 300000; // FIX 5 MIN = 12 req/hour = 100 req se din bhar chalega
+  const now = new Date();
+  const used = getTodayReqCount().count || 0;
+  const remainingReq = DAILY_LIMIT - RESERVE_REQ - used;
+
+  // aaj ke active match gino
+  const todayActive = allMatches.filter(m=>{
+    let d = getTimeObj(m);
+    if(!d) return false;
+    let diff = d.getTime() - Date.now();
+    let isUpcoming24 = m.status=='upcoming' && diff>0 && diff < 24*60*60*1000;
+    let isLive = m.status=='live';
+    let isEnded12 = m.status=='ended' && (Date.now() - (m.endedAt||0)) < 12*60*60*1000;
+    return isUpcoming24 || isLive || isEnded12;
+  }).length || 1;
+
+  // bacha hua time raat 12 tak (ms)
+  let midnight = new Date(); midnight.setHours(23,59,59,999);
+  let msLeft = midnight - now;
+  let interval = msLeft / Math.max(remainingReq,1);
+  
+  // live hai to tez, nahi to slow
+  let isLiveNow = allMatches.some(m=>m.status=='live');
+  if(isLiveNow) interval = Math.min(interval, 2*60*1000); // live me max 2 min
+  else interval = Math.min(Math.max(interval, 5*60*1000), 30*60*1000); // upcoming me 5-30 min
+
+  console.log(`Active Today: ${todayActive}, Remaining Req: ${remainingReq}, Next in ${Math.round(interval/60000)} min`);
+
   let statusEl = document.getElementById('apiStatus');
-  if(statusEl){
-    const used = getTodayReqCount().count||0;
-    if(isLive) statusEl.innerText = `Live • 5 min refresh • Used ${used}/100`;
-    else statusEl.innerText = `Auto • 5 min • Used ${used}/100`;
-  }
- // Live = 30 sec, Nahi to 5 min
-  console.log(isLive ? "Live hai, 30 sec me next" : "Live nahi hai, 5 min me next");
+  if(statusEl) statusEl.innerText = `Today ${todayActive} match • Next ${Math.round(interval/60000)} min • Used ${used}/100`;
+
   setTimeout(() => {
     fetchApiMatches().then(scheduleNextFetch);
-  }, nextTime);
+  }, interval);
 }
 scheduleNextFetch();
 </script></body></html>
